@@ -40,12 +40,11 @@ def compile_models_dct():
     return models_dct
 
 
-def user_select_dir(root, title, row):
+def user_select_dir(root, start_dir, title, row):
     """Get the image directory from the user."""
     # Initialize the path to the image directory
-    user_home = os.path.expanduser("~")
     selected_dir = tk.StringVar(root)
-    selected_dir.set(user_home)
+    selected_dir.set(start_dir)
 
     # Make labels and entries for the GUI
     selected_dir_label = tk.Label(root, text=title)
@@ -58,7 +57,7 @@ def user_select_dir(root, title, row):
         root,
         text="Browse",
         command=lambda: selected_dir.set(
-            filedialog.askdirectory(initialdir=user_home)
+            filedialog.askdirectory(initialdir=start_dir)
         ),
     )
     selected_dir_button.grid(row=row, column=2)
@@ -101,6 +100,64 @@ def get_model(root):
     return source, model
 
 
+def compute_feature_maps(image_dir, source, model, feature_map_head_dir):
+    """Get the layers to extract features from."""
+    # Set up extractor
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    extractor = get_extractor(
+        model_name=model.get(),
+        source=source.get(),
+        device=device,
+        pretrained=True,
+    )
+
+    # Make feature map directory (if necessary)
+    feature_map_dir = f"{feature_map_head_dir.get()}/feature_maps"
+    os.makedirs(feature_map_dir, exist_ok=True)
+
+    # Set up dataset and dataloader
+    dataset = ImageDataset(
+        root=image_dir.get(),
+        out_path=feature_map_dir,
+        backend=extractor.get_backend(),
+        transforms=extractor.get_transformations(resize_dim=256, crop_dim=224),
+    )
+    batches = DataLoader(
+        dataset=dataset, batch_size=32, backend=extractor.get_backend()
+    )
+
+    # Extract features
+    modules = extractor.get_module_names()
+    for i, module_name in enumerate(modules):
+        # Make directory for module-specific feature maps
+        module_dir = (
+            f"{feature_map_dir}/{source.get()}/{model.get()}/{module_name}"
+        )
+        os.makedirs(module_dir, exist_ok=True)
+
+        # Skip if the module has already been processed
+        if os.path.exists(f"{module_dir}/features.npy"):
+            continue
+
+        # Extract features
+        print(
+            f"Extracting features from {module_name} "
+            f"module ({i+1}/{len(modules)})"
+        )
+        features = extractor.extract_features(
+            batches=batches,
+            module_name=module_name,
+            flatten_acts=True,
+            output_type="ndarray",
+        )
+
+        # Save features
+        save_features(
+            features=features, out_path=module_dir, file_format="npy"
+        )
+    return
+
+
 def make_gui():
     """Make the GUI for the RSA analysis."""
     # Create a new GUI
@@ -109,13 +166,26 @@ def make_gui():
     root.geometry("800x600")
 
     # Get the image directory
-    image_dir = user_select_dir(root, "Image directory", 0)
+    user_home = os.path.expanduser("~")
+    image_dir = user_select_dir(root, user_home, "Image directory", 0)
 
     # Determine which model to extract features from
     source, model = get_model(root)
 
     # Get feature map directory
-    feature_map_dir = user_select_dir(root, "Feature map directory", 3)
+    feature_map_head_dir = user_select_dir(
+        root, os.getcwd(), "Feature map directory", 3
+    )
+
+    # Make a button to generate the feature maps
+    feature_maps_button = ttk.Button(
+        root,
+        text="Compute feature maps",
+        command=lambda: compute_feature_maps(
+            image_dir, source, model, feature_map_head_dir
+        ),
+    )
+    feature_maps_button.grid(row=4, column=1)
 
     # Run the GUI
     root.mainloop()
