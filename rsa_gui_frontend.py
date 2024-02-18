@@ -1,15 +1,23 @@
 """"""
 
-# Import necessary modules
+# Standard library imports
 import os
 import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 from inspect import getmembers, isfunction
+import torch
+
+# Libraries with pre-trained models
 import torchvision.models as torchvision_models
 import keras.applications as keras_models
 import timm.models as timm_models
 from clip import available_models
+
+# ThingsVision modules
+from thingsvision import get_extractor
+from thingsvision.utils.storing import save_features
+from thingsvision.utils.data import ImageDataset, DataLoader
 
 
 def _get_function_names(module):
@@ -32,29 +40,29 @@ def compile_models_dct():
     return models_dct
 
 
-def get_image_dir(root):
+def user_select_dir(root, title, row):
     """Get the image directory from the user."""
     # Initialize the path to the image directory
     user_home = os.path.expanduser("~")
-    image_dir = tk.StringVar(root)
-    image_dir.set(user_home)
+    selected_dir = tk.StringVar(root)
+    selected_dir.set(user_home)
 
     # Make labels and entries for the GUI
-    image_dir_label = tk.Label(root, text="Image directory")
-    image_dir_label.grid(row=0, column=0)
-    image_dir_entry = tk.Entry(root, textvariable=image_dir)
-    image_dir_entry.grid(row=0, column=1)
+    selected_dir_label = tk.Label(root, text=title)
+    selected_dir_label.grid(row=row, column=0)
+    selected_entry = tk.Entry(root, textvariable=selected_dir)
+    selected_entry.grid(row=row, column=1)
 
     # Make a button to browse for the image directory
-    image_dir_button = ttk.Button(
+    selected_dir_button = ttk.Button(
         root,
         text="Browse",
-        command=lambda: image_dir.set(
+        command=lambda: selected_dir.set(
             filedialog.askdirectory(initialdir=user_home)
         ),
     )
-    image_dir_button.grid(row=0, column=2)
-    return image_dir
+    selected_dir_button.grid(row=row, column=2)
+    return selected_dir
 
 
 def get_model(root):
@@ -90,7 +98,7 @@ def get_model(root):
 
     # Set the default source
     source.set("torchvision")
-    return model
+    return source, model
 
 
 def make_gui():
@@ -101,10 +109,13 @@ def make_gui():
     root.geometry("800x600")
 
     # Get the image directory
-    image_dir = get_image_dir(root)
+    image_dir = user_select_dir(root, "Image directory", 0)
 
     # Determine which model to extract features from
-    model = get_model(root)
+    source, model = get_model(root)
+
+    # Get feature map directory
+    feature_map_dir = user_select_dir(root, "Feature map directory", 3)
 
     # Run the GUI
     root.mainloop()
