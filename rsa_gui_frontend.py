@@ -1,4 +1,5 @@
-""""""
+"""Frontend for the Representational Similarity Analysis (RSA) GUI. Uses 
+thingsvision to extract features from images."""
 
 # Standard library imports
 import os
@@ -14,11 +15,44 @@ import torchvision.models as torchvision_models
 import keras.applications as keras_models
 import timm.models as timm_models
 from clip import available_models
+from open_clip import list_pretrained
 
 # ThingsVision modules
 from thingsvision import get_extractor
 from thingsvision.utils.storing import save_features
 from thingsvision.utils.data import ImageDataset, DataLoader
+
+
+# Models that cannot be programmatically determined
+SSL_MODELS = [
+    "simclr-rn50",
+    "mocvo2-rn50",
+    "jigsaw-rn50",
+    "rotnet-rn50",
+    "swav-rn50",
+    "pirl-rn50",
+    "barlowtwins-rn50",
+    "vicreg-rn50",
+    "dino-rn50",
+    "dino-vit-small-p8",
+    "dino-vit-small-p16",
+    "dino-vit-base-p8",
+    "dino-vit-base-p16",
+    "dino-xcit-small-12-p16",
+    "dino-xcit-small-12-p8",
+    "dino-xcit-medium-24-p16",
+    "dino-xcit-medium-24-p8",
+]
+CUSTOM_MODELS = [
+    "cornet-s",
+    "cornet-r",
+    "cornet-rt",
+    "cornet-z",
+    "Alexnet_ecoset",
+    "Resnet50_ecoset",
+    "VGG16_ecoset",
+    "Inception_ecoset",
+]
 
 
 def _get_function_names(module):
@@ -28,7 +62,7 @@ def _get_function_names(module):
     return [function[0] for function in functions]
 
 
-def compile_models_dct():
+def compile_models_dct(ssl_models=SSL_MODELS, custom_models=CUSTOM_MODELS):
     """Compile a list of models that thingsvision supports."""
     # Initialize the dictionary of models
     models_dct = {}
@@ -38,6 +72,9 @@ def compile_models_dct():
     models_dct["keras"] = _get_function_names(keras_models)
     models_dct["timm"] = _get_function_names(timm_models)
     models_dct["clip"] = available_models()
+    models_dct["open_clip"] = list_pretrained()
+    models_dct["ssl"] = ssl_models
+    models_dct["custom"] = custom_models
     return models_dct
 
 
