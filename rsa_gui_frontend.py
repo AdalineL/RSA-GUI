@@ -2,6 +2,7 @@
 
 # Standard library imports
 import os
+import numpy as np
 import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
@@ -158,6 +159,37 @@ def compute_feature_maps(image_dir, source, model, feature_map_head_dir):
     return
 
 
+def load_feature_maps(feature_map_head_dir, source, model):
+    """Load the feature maps that have been computed. WATCH OUT FOR MEMORY!"""
+    # Determine module directories
+    feature_map_dir = f"{feature_map_head_dir.get()}/feature_maps"
+    modules_head_dir = f"{feature_map_dir}/{source.get()}/{model.get()}"
+    module_dirs = [
+        f"{modules_head_dir}/{module}"
+        for module in os.listdir(modules_head_dir)
+        if os.path.exists(f"{modules_head_dir}/{module}/features.npy")
+    ]
+
+    # Load the feature maps
+    feature_maps_dct = {}
+    for module_dir in module_dirs:
+        # Determine the module
+        module = module_dir.split("/")[-1]
+
+        # Load the feature map for the module
+        features = np.load(f"{module_dir}/features.npy")
+
+        # Add the feature map to the dictionary
+        feature_maps_dct[module] = features
+
+        # Print the shape of the feature map
+        print(
+            f"Loaded feature map for {module} module"
+            f" with shape {features.shape}"
+        )
+    return feature_maps_dct
+
+
 def make_gui():
     """Make the GUI for the RSA analysis."""
     # Create a new GUI
@@ -178,14 +210,22 @@ def make_gui():
     )
 
     # Make a button to generate the feature maps
-    feature_maps_button = ttk.Button(
+    compute_feature_maps_button = ttk.Button(
         root,
         text="Compute feature maps",
         command=lambda: compute_feature_maps(
             image_dir, source, model, feature_map_head_dir
         ),
     )
-    feature_maps_button.grid(row=4, column=1)
+    compute_feature_maps_button.grid(row=4, column=1)
+
+    # Make a button to load the feature maps
+    load_feature_maps_button = ttk.Button(
+        root,
+        text="Load feature maps",
+        command=lambda: load_feature_maps(feature_map_head_dir, source, model),
+    )
+    load_feature_maps_button.grid(row=4, column=2)
 
     # Run the GUI
     root.mainloop()
