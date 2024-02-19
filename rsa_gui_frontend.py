@@ -145,16 +145,12 @@ def compute_feature_maps(image_dir, source, model, feature_map_head_dir):
             f"Extracting features from {module_name} "
             f"module ({i+1}/{len(modules)})"
         )
-        features = extractor.extract_features(
+        extractor.extract_features(
             batches=batches,
             module_name=module_name,
             flatten_acts=True,
             output_type="ndarray",
-        )
-
-        # Save features
-        save_features(
-            features=features, out_path=module_dir, file_format="npy"
+            output_dir=module_dir,
         )
     return
 
