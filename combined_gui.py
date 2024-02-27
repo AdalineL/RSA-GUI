@@ -243,7 +243,7 @@ def get_correlation_method(root):
     options = list(CORRELATION_METHODS.keys())
     correlation_method.set(options[0])  # default value to the first option
 
-    method_label = tk.Label(root, text="Correlation Method")
+    method_label = tk.Label(root, text="Correlation Method for RDMs")
     method_label.grid(row=5, column=0)
     method_menu = tk.OptionMenu(root, correlation_method, *options)
     method_menu.grid(row=5, column=1)
@@ -251,7 +251,7 @@ def get_correlation_method(root):
     return correlation_method
 
 
-def compute_correlation_coefficient(layer_activations_dct, method='Spearman'):
+def compute_rdm(layer_activations_dct, method='Spearman'):
     global LAYER_ACTIVATIONS
     if not LAYER_ACTIVATIONS:
         messagebox.showinfo("Error", "Layer activations dictionary is empty.")
@@ -273,7 +273,7 @@ def compute_correlation_coefficient(layer_activations_dct, method='Spearman'):
                 rdm[i, j] = rdm[j, i] = distance
         rdms[layer] = rdm
 
-    messagebox.showinfo("Correlation Computation", f"Correlation computation using {method} method is complete.")
+    messagebox.showinfo("RDM Computation", f"RDM computation using {method} method is complete.")
 
     return rdms
 
@@ -319,12 +319,12 @@ def make_gui():
     correlation_method = get_correlation_method(root)  
     
     # Make a button to compute the correlation coefficient
-    compute_correlation_button = ttk.Button(
+    compute_rdm_button = ttk.Button(
         root, 
-        text="Compute correlation coefficient",
-        command=lambda: compute_correlation_coefficient(method=correlation_method.get())
+        text="Compute RDMs",
+        command=lambda: compute_rdm(method=correlation_method.get())
     )
-    compute_correlation_button.grid(row=6, column=1)
+    compute_rdm_button.grid(row=6, column=1)
 
     # Run the GUI
     root.mainloop()
