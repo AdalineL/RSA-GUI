@@ -267,9 +267,6 @@ def make_gui():
     layer_activation_head_dir = user_select_dir(
         root, os.getcwd(), "Layer activation directory", 3
     )
-    
-    # Add correlation method selection
-    correlation_method = get_correlation_method(root)  
 
     # Make a button to generate the layer activations
     compute_layer_activations_button = ttk.Button(
@@ -279,7 +276,7 @@ def make_gui():
             image_dir, source, model, layer_activation_head_dir
         ),
     )
-    compute_layer_activations_button.grid(row=6, column=1)
+    compute_layer_activations_button.grid(row=4, column=1)
 
     # Make a button to load the layer activations
     load_layer_activations_button = ttk.Button(
@@ -287,16 +284,31 @@ def make_gui():
         text="Load layer activations",
         command=lambda: load_layer_activations(layer_activation_head_dir, source, model),
     )
-    load_layer_activations_button.grid(row=6, column=2)
+    load_layer_activations_button.grid(row=4, column=2)
+    
+    # Add correlation method selection
+    correlation_method = get_correlation_method(root)  
+    
+    # Make a button to compute the correlation coefficient
+    compute_correlation_button = ttk.Button(
+        root, 
+        text="Compute correlation coefficient",
+        command=lambda: compute_correlation_coefficient(matrix=None, method=correlation_method.get())
+    )
+    compute_correlation_button.grid(row=6, column=1)
 
     # Run the GUI
     root.mainloop()
     return
 
 
-def calculate_rdm(matrix, method='spearman'):
+def compute_correlation_coefficient(matrix=None, method='Spearman'):
+    if matrix is None or len(matrix) == 0:
+        messagebox.showinfo("Error", "Matrix is empty or not provided.")
+        return
     if method not in CORRELATION_METHODS:
         raise ValueError("Unsupported correlation method")
+
     n_samples = matrix.shape[0]
     rdm = np.zeros((n_samples, n_samples))
 
@@ -304,6 +316,7 @@ def calculate_rdm(matrix, method='spearman'):
         for j in range(n_samples):
             corr, _ = CORRELATION_METHODS[method](matrix[i], matrix[j])
             rdm[i, j] = 1 - corr
+    messagebox.showinfo("Correlation Computation", f"Correlation computation using {method} method is complete.")
     return rdm
 
 
