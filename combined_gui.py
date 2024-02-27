@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 from inspect import getmembers, isfunction
+from scipy.stats import spearmanr, pearsonr
 import torch
 
 # Libraries with pre-trained models
@@ -53,6 +54,10 @@ CUSTOM_MODELS = [
     "VGG16_ecoset",
     "Inception_ecoset",
 ]
+CORRELATION_METHODS = {
+    "spearman": spearmanr,
+    "pearson": pearsonr,
+}
 
 
 def _get_function_names(module):
@@ -138,7 +143,20 @@ def get_model(root):
     return source, model
 
 
-def compute_feature_maps(image_dir, source, model, feature_map_head_dir):
+def get_correlation_method(root):
+    """Create a dropdown menu for selecting the correlation method."""
+    correlation_method = tk.StringVar(root)
+    correlation_method.set("spearman")  # default value
+
+    method_label = tk.Label(root, text="Correlation Method")
+    method_label.grid(row=5, column=0)
+    method_menu = tk.OptionMenu(root, correlation_method, "spearman", "pearson")
+    method_menu.grid(row=5, column=1)
+
+    return correlation_method
+
+
+def compute_layer_activations(image_dir, source, model, layer_activation_head_dir):
     """Get the layers to extract features from."""
     # Set up extractor
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -149,14 +167,14 @@ def compute_feature_maps(image_dir, source, model, feature_map_head_dir):
         pretrained=True,
     )
 
-    # Make feature map directory (if necessary)
-    feature_map_dir = f"{feature_map_head_dir.get()}/feature_maps"
-    os.makedirs(feature_map_dir, exist_ok=True)
+    # Make layer activation directory (if necessary)
+    layer_activation_dir = f"{layer_activation_head_dir.get()}/layer_activations"
+    os.makedirs(layer_activation_dir, exist_ok=True)
 
     # Set up dataset and dataloader
     dataset = ImageDataset(
         root=image_dir.get(),
-        out_path=feature_map_dir,
+        out_path=layer_activation_dir,
         backend=extractor.get_backend(),
         transforms=extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
@@ -167,9 +185,9 @@ def compute_feature_maps(image_dir, source, model, feature_map_head_dir):
     # Extract features
     modules = extractor.get_module_names()
     for i, module_name in enumerate(modules):
-        # Make directory for module-specific feature maps
+        # Make directory for module-specific layer activations
         module_dir = (
-            f"{feature_map_dir}/{source.get()}/{model.get()}/{module_name}"
+            f"{layer_activation_dir}/{source.get()}/{model.get()}/{module_name}"
         )
         os.makedirs(module_dir, exist_ok=True)
 
@@ -192,35 +210,35 @@ def compute_feature_maps(image_dir, source, model, feature_map_head_dir):
     return
 
 
-def load_feature_maps(feature_map_head_dir, source, model):
-    """Load the feature maps that have been computed. WATCH OUT FOR MEMORY!"""
+def load_layer_activations(layer_activation_head_dir, source, model):
+    """Load the layer activation that have been computed. WATCH OUT FOR MEMORY!"""
     # Determine module directories
-    feature_map_dir = f"{feature_map_head_dir.get()}/feature_maps"
-    modules_head_dir = f"{feature_map_dir}/{source.get()}/{model.get()}"
+    layer_activation_dir = f"{layer_activation_head_dir.get()}/layer_activations"
+    modules_head_dir = f"{layer_activation_dir}/{source.get()}/{model.get()}"
     module_dirs = [
         f"{modules_head_dir}/{module}"
         for module in os.listdir(modules_head_dir)
         if os.path.exists(f"{modules_head_dir}/{module}/features.npy")
     ]
 
-    # Load the feature maps
-    feature_maps_dct = {}
+    # Load the layer activations
+    layer_activations_dct = {}
     for module_dir in module_dirs:
         # Determine the module
         module = module_dir.split("/")[-1]
 
-        # Load the feature map for the module
-        features = np.load(f"{module_dir}/features.npy")
+        # Load the layer activation for the module
+        layers = np.load(f"{module_dir}/features.npy")
 
-        # Add the feature map to the dictionary
-        feature_maps_dct[module] = features
+        # Add the layer activation to the dictionary
+        layer_activations_dct[module] = layers
 
-        # Print the shape of the feature map
+        # Print the shape of the layer activation
         print(
-            f"Loaded feature map for {module} module"
-            f" with shape {features.shape}"
+            f"Loaded layer activation for {module} module"
+            f" with shape {layers.shape}"
         )
-    return feature_maps_dct
+    return layer_activations_dct
 
 
 def make_gui():
@@ -234,57 +252,59 @@ def make_gui():
     user_home = os.path.expanduser("~")
     image_dir = user_select_dir(root, user_home, "Image directory", 0)
 
-    # Determine which model to extract features from
+    # Determine which model to extract layer from
     source, model = get_model(root)
 
-    # Get feature map directory
-    feature_map_head_dir = user_select_dir(
-        root, os.getcwd(), "Feature map directory", 3
+    # Get layer activation directory
+    layer_activation_head_dir = user_select_dir(
+        root, os.getcwd(), "Layer activation directory", 3
     )
+    
+    # Add correlation method selection
+    correlation_method = get_correlation_method(root)  
 
-    # Make a button to generate the feature maps
-    compute_feature_maps_button = ttk.Button(
+    # Make a button to generate the layer activations
+    compute_layer_activations_button = ttk.Button(
         root,
-        text="Compute feature maps",
-        command=lambda: compute_feature_maps(
-            image_dir, source, model, feature_map_head_dir
+        text="Compute layer activations",
+        command=lambda: compute_layer_activations(
+            image_dir, source, model, layer_activation_head_dir
         ),
     )
-    compute_feature_maps_button.grid(row=4, column=1)
+    compute_layer_activations_button.grid(row=6, column=1)
 
-    # Make a button to load the feature maps
-    load_feature_maps_button = ttk.Button(
+    # Make a button to load the layer activations
+    load_layer_activations_button = ttk.Button(
         root,
-        text="Load feature maps",
-        command=lambda: load_feature_maps(feature_map_head_dir, source, model),
+        text="Load layer activations",
+        command=lambda: load_layer_activations(layer_activation_head_dir, source, model),
     )
-    load_feature_maps_button.grid(row=4, column=2)
+    load_layer_activations_button.grid(row=6, column=2)
 
     # Run the GUI
     root.mainloop()
     return
 
 def calculate_rdm(matrix, method='spearman'):
-    # TODO: Correlation Coefficient type should be selectable
+    if method not in CORRELATION_METHODS:
+        raise ValueError("Unsupported correlation method")
     n_samples = matrix.shape[0]
     rdm = np.zeros((n_samples, n_samples))
 
     for i in range(n_samples):
         for j in range(n_samples):
-            if method == 'spearman':
-                corr, _ = spearmanr(matrix[i], matrix[j])
-                rdm[i, j] = 1 - corr
+            corr, _ = CORRELATION_METHODS[method](matrix[i], matrix[j])
+            rdm[i, j] = 1 - corr
     return rdm
-
-def compare_rdms(rdm1, rdm2):
-    # TODO: Correlation Coefficient type should be selectable
-    rdm1_flat = rdm1.flatten()
-    rdm2_flat = rdm2.flatten()
-    corr, _ = spearmanr(rdm1_flat, rdm2_flat)
-    return corr
 
 
 
 
 if __name__ == "__main__":
     make_gui()
+
+
+#todo: target rdms (behavior or neural data) i.e. from elife article
+
+#todo: compare rdms
+# all the distance metrics putting that as the selections in the gui
