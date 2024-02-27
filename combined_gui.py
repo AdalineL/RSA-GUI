@@ -12,7 +12,6 @@ from scipy.stats import spearmanr, pearsonr, kendalltau
 from scipy.spatial.distance import correlation as distance_correlation
 from sklearn.metrics import mutual_info_score
 from sklearn.cross_decomposition import CCA
-from scipy.stats import pointbiserialr
 import torch
 
 # Libraries with pre-trained models
@@ -58,12 +57,13 @@ CUSTOM_MODELS = [
     "VGG16_ecoset",
     "Inception_ecoset",
 ]
+# Other global variables
 CORRELATION_METHODS = {
     'Spearman': spearmanr,
     'Pearson': pearsonr,
     'Kendall': kendalltau,
-    'Point-Biserial': pointbiserialr
 }
+LAYER_ACTIVATIONS = {}
 
 
 def _get_function_names(module):
@@ -149,21 +149,6 @@ def get_model(root):
     return source, model
 
 
-def get_correlation_method(root):
-    """Create a dropdown menu for selecting the correlation method."""
-    correlation_method = tk.StringVar(root)
-    
-    options = list(CORRELATION_METHODS.keys())
-    correlation_method.set(options[0])  # default value to the first option
-
-    method_label = tk.Label(root, text="Correlation Method")
-    method_label.grid(row=5, column=0)
-    method_menu = tk.OptionMenu(root, correlation_method, *options)
-    method_menu.grid(row=5, column=1)
-
-    return correlation_method
-
-
 def compute_layer_activations(image_dir, source, model, layer_activation_head_dir):
     """Get the layers to extract features from."""
     # Set up extractor
@@ -220,6 +205,7 @@ def compute_layer_activations(image_dir, source, model, layer_activation_head_di
 
 def load_layer_activations(layer_activation_head_dir, source, model):
     """Load the layer activation that have been computed. WATCH OUT FOR MEMORY!"""
+    global LAYER_ACTIVATIONS
     # Determine module directories
     layer_activation_dir = f"{layer_activation_head_dir.get()}/layer_activations"
     modules_head_dir = f"{layer_activation_dir}/{source.get()}/{model.get()}"
@@ -246,7 +232,50 @@ def load_layer_activations(layer_activation_head_dir, source, model):
             f"Loaded layer activation for {module} module"
             f" with shape {layers.shape}"
         )
+        LAYER_ACTIVATIONS = layer_activations_dct
     return layer_activations_dct
+
+
+def get_correlation_method(root):
+    """Create a dropdown menu for selecting the correlation method."""
+    correlation_method = tk.StringVar(root)
+    
+    options = list(CORRELATION_METHODS.keys())
+    correlation_method.set(options[0])  # default value to the first option
+
+    method_label = tk.Label(root, text="Correlation Method")
+    method_label.grid(row=5, column=0)
+    method_menu = tk.OptionMenu(root, correlation_method, *options)
+    method_menu.grid(row=5, column=1)
+
+    return correlation_method
+
+
+def compute_correlation_coefficient(layer_activations_dct, method='Spearman'):
+    global LAYER_ACTIVATIONS
+    if not LAYER_ACTIVATIONS:
+        messagebox.showinfo("Error", "Layer activations dictionary is empty.")
+        return
+    if method not in CORRELATION_METHODS:
+        raise ValueError("Unsupported correlation method")
+
+    # Initialize a dictionary to store RDMs for each layer
+    rdms = {}
+    
+    # Calculate RDM for each layer
+    for layer, activations in layer_activations_dct.items():
+        n_samples = activations.shape[0]
+        rdm = np.zeros((n_samples, n_samples))
+        for i in range(n_samples):
+            for j in range(i, n_samples):  # Use symmetry to reduce computation
+                corr, _ = CORRELATION_METHODS[method](activations[i], activations[j])
+                distance = 1 - corr  
+                rdm[i, j] = rdm[j, i] = distance
+        rdms[layer] = rdm
+
+    messagebox.showinfo("Correlation Computation", f"Correlation computation using {method} method is complete.")
+
+    return rdms
 
 
 def make_gui():
@@ -293,33 +322,13 @@ def make_gui():
     compute_correlation_button = ttk.Button(
         root, 
         text="Compute correlation coefficient",
-        command=lambda: compute_correlation_coefficient(matrix=None, method=correlation_method.get())
+        command=lambda: compute_correlation_coefficient(method=correlation_method.get())
     )
     compute_correlation_button.grid(row=6, column=1)
 
     # Run the GUI
     root.mainloop()
     return
-
-
-def compute_correlation_coefficient(matrix=None, method='Spearman'):
-    if matrix is None or len(matrix) == 0:
-        messagebox.showinfo("Error", "Matrix is empty or not provided.")
-        return
-    if method not in CORRELATION_METHODS:
-        raise ValueError("Unsupported correlation method")
-
-    n_samples = matrix.shape[0]
-    rdm = np.zeros((n_samples, n_samples))
-
-    for i in range(n_samples):
-        for j in range(n_samples):
-            corr, _ = CORRELATION_METHODS[method](matrix[i], matrix[j])
-            rdm[i, j] = 1 - corr
-    messagebox.showinfo("Correlation Computation", f"Correlation computation using {method} method is complete.")
-    return rdm
-
-
 
 
 if __name__ == "__main__":
