@@ -6,9 +6,13 @@ import os
 import numpy as np
 import tkinter as tk
 from tkinter import ttk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from inspect import getmembers, isfunction
-from scipy.stats import spearmanr, pearsonr
+from scipy.stats import spearmanr, pearsonr, kendalltau
+from scipy.spatial.distance import correlation as distance_correlation
+from sklearn.metrics import mutual_info_score
+from sklearn.cross_decomposition import CCA
+from scipy.stats import pointbiserialr
 import torch
 
 # Libraries with pre-trained models
@@ -55,8 +59,10 @@ CUSTOM_MODELS = [
     "Inception_ecoset",
 ]
 CORRELATION_METHODS = {
-    "spearman": spearmanr,
-    "pearson": pearsonr,
+    'Spearman': spearmanr,
+    'Pearson': pearsonr,
+    'Kendall': kendalltau,
+    'Point-Biserial': pointbiserialr
 }
 
 
@@ -146,11 +152,13 @@ def get_model(root):
 def get_correlation_method(root):
     """Create a dropdown menu for selecting the correlation method."""
     correlation_method = tk.StringVar(root)
-    correlation_method.set("spearman")  # default value
+    
+    options = list(CORRELATION_METHODS.keys())
+    correlation_method.set(options[0])  # default value to the first option
 
     method_label = tk.Label(root, text="Correlation Method")
     method_label.grid(row=5, column=0)
-    method_menu = tk.OptionMenu(root, correlation_method, "spearman", "pearson")
+    method_menu = tk.OptionMenu(root, correlation_method, *options)
     method_menu.grid(row=5, column=1)
 
     return correlation_method
@@ -285,6 +293,7 @@ def make_gui():
     root.mainloop()
     return
 
+
 def calculate_rdm(matrix, method='spearman'):
     if method not in CORRELATION_METHODS:
         raise ValueError("Unsupported correlation method")
@@ -302,9 +311,3 @@ def calculate_rdm(matrix, method='spearman'):
 
 if __name__ == "__main__":
     make_gui()
-
-
-#todo: target rdms (behavior or neural data) i.e. from elife article
-
-#todo: compare rdms
-# all the distance metrics putting that as the selections in the gui
