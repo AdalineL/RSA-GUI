@@ -13,6 +13,8 @@ from scipy.spatial.distance import correlation as distance_correlation
 from sklearn.metrics import mutual_info_score
 from sklearn.cross_decomposition import CCA
 import torch
+from PIL import Image, ImageTk
+
 
 # Libraries with pre-trained models
 import torchvision.models as torchvision_models
@@ -232,7 +234,12 @@ def load_layer_activations(layer_activation_head_dir, source, model):
             f"Loaded layer activation for {module} module"
             f" with shape {layers.shape}"
         )
-        LAYER_ACTIVATIONS = layer_activations_dct
+        
+    LAYER_ACTIVATIONS = layer_activations_dct
+    print(layer_activations_dct)
+    print(LAYER_ACTIVATIONS)
+    print("Layer activations have been loaded.")
+
     return layer_activations_dct
 
 
@@ -255,9 +262,16 @@ def compute_rdm(layer_activations_dct, method='Spearman'):
     global LAYER_ACTIVATIONS
     if not LAYER_ACTIVATIONS:
         messagebox.showinfo("Error", "Layer activations dictionary is empty.")
+        print(LAYER_ACTIVATIONS)
         return
     if method not in CORRELATION_METHODS:
         raise ValueError("Unsupported correlation method")
+    
+    save_dir = filedialog.askdirectory(title="Select Directory to Save RDMs")
+    if not save_dir:
+        messagebox.showinfo("Error", "No directory selected for saving RDMs.")
+        return
+    os.makedirs(save_dir, exist_ok=True)
 
     # Initialize a dictionary to store RDMs for each layer
     rdms = {}
@@ -273,9 +287,28 @@ def compute_rdm(layer_activations_dct, method='Spearman'):
                 rdm[i, j] = rdm[j, i] = distance
         rdms[layer] = rdm
 
-    messagebox.showinfo("RDM Computation", f"RDM computation using {method} method is complete.")
+    print("RDM computation using" + method + " is complete.")
 
     return rdms
+
+
+
+def display_rdms(rdms, root, canvas, rdm_layer_head_dir):
+    
+    for idx, (layer, rdm) in enumerate(rdms.items()):
+        # Convert RDM to an image
+        rdm_image = Image.fromarray(np.uint8((rdm / np.max(rdm)) * 255)) 
+        rdm_photo = ImageTk.PhotoImage(rdm_image.resize((100, 100)))  
+        
+        # Calculate position
+        x_position = (idx % 5) * 110  
+        y_position = (idx // 5) * 110 
+
+        # Display RDM on canvas
+        canvas.create_image(x_position, y_position, anchor='nw', image=rdm_photo)
+        canvas.image = rdm_photo  
+
+
 
 
 def make_gui():
@@ -315,14 +348,19 @@ def make_gui():
     )
     load_layer_activations_button.grid(row=4, column=2)
     
+    # Get RDM layer directory
+    rdm_layer_head_dir = user_select_dir(
+        root, os.getcwd(), "RDM layer directory", 3
+    )
+    
     # Add correlation method selection
     correlation_method = get_correlation_method(root)  
-    
+        
     # Make a button to compute the correlation coefficient
     compute_rdm_button = ttk.Button(
         root, 
         text="Compute RDMs",
-        command=lambda: compute_rdm(method=correlation_method.get())
+        command=lambda: compute_rdm(layer_activations_dct=LAYER_ACTIVATIONS, method=correlation_method.get())
     )
     compute_rdm_button.grid(row=6, column=1)
 
