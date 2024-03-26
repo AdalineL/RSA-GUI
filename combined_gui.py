@@ -304,9 +304,10 @@ def compute_rdm(source, model, rdm_head_dir, method_name):
 
 
 
-def display_rdms(canvas, rdm_head_dir, source, model):
-    # Clear previous figures on the canvas
-    canvas.delete("all")
+def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
+    # Create canvas
+    canvas = tk.Canvas(rdm_display_tab, width=400, height=400)
+    canvas.pack()
     
     # Determine RDM directories
     rdm_dir = f"{rdm_head_dir.get()}/rdms"
@@ -353,22 +354,35 @@ def make_gui():
     root = tk.Tk()
     root.title("Representational Similarity Analysis (RSA) GUI")
     root.geometry("800x600")
+    
+    # Initialize ttk.Notebook for tabbed interface
+    tab_control = ttk.Notebook(root)
+    
+    # Create tabs
+    main_tab = ttk.Frame(tab_control)
+    rdm_display_tab = ttk.Frame(tab_control)  # Tab for RDM visualization
+    
+    # Add tabs to the notebook
+    tab_control.add(main_tab, text='Main')
+    tab_control.add(rdm_display_tab, text='RDM Display')
+    
+    tab_control.pack(expand=1, fill="both")
 
     # Get the image directory
     user_home = os.path.expanduser("~")
-    image_dir = user_select_dir(root, os.path.join(os.getcwd(), 'images'), "Image directory", 0)
+    image_dir = user_select_dir(main_tab, os.path.join(os.getcwd(), 'images'), "Image directory", 0)
 
     # Determine which model to extract layer from
-    source, model = get_model(root)
+    source, model = get_model(main_tab)
 
     # Get layer activation directory
     layer_activation_head_dir = user_select_dir(
-        root, os.getcwd(), "Layer activation directory", 3
+        main_tab, os.getcwd(), "Layer activation directory", 3
     )
 
     # Make a button to generate the layer activations
     compute_layer_activations_button = ttk.Button(
-        root,
+        main_tab,
         text="Compute layer activations",
         command=lambda: compute_layer_activations(
             image_dir, source, model, layer_activation_head_dir
@@ -378,7 +392,7 @@ def make_gui():
 
     # Make a button to load the layer activations
     load_layer_activations_button = ttk.Button(
-        root,
+        main_tab,
         text="Load layer activations",
         command=lambda: load_layer_activations(layer_activation_head_dir, source, model),
     )
@@ -386,29 +400,25 @@ def make_gui():
     
     # Get RDMs directory
     rdm_head_dir = user_select_dir(
-        root, os.getcwd(), "RDMs directory", 5
+        main_tab, os.getcwd(), "RDMs directory", 5
     )
     
     # Add correlation method selection
-    correlation_method_button = get_correlation_method(root)  
+    correlation_method_button = get_correlation_method(main_tab)  
 
     # Make a button to compute the correlation coefficient
     compute_rdm_button = ttk.Button(
-        root, 
+        main_tab, 
         text="Compute RDMs",
         command=lambda: compute_rdm(source, model, rdm_head_dir, method_name=correlation_method_button.get())
     )
     compute_rdm_button.grid(row=7, column=1)
     
-    # Create a canvas for RDM visualization
-    canvas = tk.Canvas(root, width=400, height=400)
-    canvas.grid(row=8, column=0, columnspan=3)
-    
     # Make a button to display the RDMs
     display_rdms_button = ttk.Button(
-        root,
+        main_tab,
         text="Display RDMs",
-        command=lambda: display_rdms(canvas, rdm_head_dir, source, model)
+        command=lambda: display_rdms(rdm_display_tab, rdm_head_dir, source, model)
     )
     display_rdms_button.grid(row=8, column=1)
 
