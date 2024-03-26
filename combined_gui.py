@@ -74,6 +74,8 @@ CORRELATION_METHODS = {
 }
 #TODO: create a getter method to get layer_activations_dct
 LAYER_ACTIVATIONS = {}
+# Global variable to track current RDM index
+CURR_RDM_IDX = 0
 
 
 def _get_function_names(module):
@@ -305,9 +307,7 @@ def compute_rdm(source, model, rdm_head_dir, method_name):
 
 
 def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
-    # Create canvas
-    canvas = tk.Canvas(rdm_display_tab, width=400, height=400)
-    canvas.pack()
+    global CURR_RDM_IDX
     
     # Determine RDM directories
     rdm_dir = f"{rdm_head_dir.get()}/rdms"
@@ -318,12 +318,11 @@ def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
         if os.path.exists(f"{modules_head_dir}/{module}/rdm.npy")
     ]
 
-    # For demonstration, display only the first RDM
-    if module_dirs:  # Check if there is at least one RDM
-        # Get the first RDM
-        first_module_dir = module_dirs[0]
-        module = first_module_dir.split("/")[-1]
-        rdm = np.load(f"{first_module_dir}/rdm.npy")
+    if module_dirs: 
+        # Get the RDM based on current index
+        selected_module_dir = module_dirs[CURR_RDM_IDX]
+        module = selected_module_dir.split("/")[-1]
+        rdm = np.load(f"{selected_module_dir}/rdm.npy")
 
         # Create matplotlib figure
         fig = Figure(figsize=(4, 4))
@@ -338,11 +337,70 @@ def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
         tk_img = ImageTk.PhotoImage(image=Image.frombytes('RGB', canvas_agg.get_width_height(), canvas_agg.tostring_rgb()))
 
         # Display on Tkinter canvas
-        canvas.create_image(200, 200, image=tk_img)
-        canvas.image = tk_img  # Keep reference
+        image_label = tk.Label(rdm_display_tab, image=tk_img)
+        image_label.image = tk_img  # Keep reference
+        image_label.grid(row=0, column=0, columnspan=3)
 
     else:
         print("No RDMs found to display.")
+        
+        
+# Helper function to navigate to the next RDM    
+def next_rdm(rdm_display_tab, rdm_head_dir, source, model):
+    global CURR_RDM_IDX
+    CURR_RDM_IDX += 1  
+    
+    rdm_dir = f"{rdm_head_dir.get()}/rdms"
+    modules_head_dir = f"{rdm_dir}/{source.get()}/{model.get()}"
+    module_dirs = [
+        f"{modules_head_dir}/{module}"
+        for module in os.listdir(modules_head_dir)
+        if os.path.exists(f"{modules_head_dir}/{module}/rdm.npy")
+    ]
+
+    # Restart index count if it exceeds the number of RDMs
+    if CURR_RDM_IDX > len(module_dirs):
+        CURR_RDM_IDX = 0
+        
+    display_rdms(rdm_display_tab, rdm_head_dir, source, model)  
+        
+        
+def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_name):
+    
+    # Get the correlation method
+    method_name = CORRELATION_METHODS.get(method_name, "correlation")
+    if method_name not in ['correlation', 'cosine', 'euclidean', 'gaussian']:
+        raise ValueError("Unsupported correlation method")
+    
+    # Load the target RDM
+    target = np.load(f"{target_rdm_dir}/rdm.npy")
+    
+    # Load the comparison RDM
+    comparison = np.load(f"{comparison_rdm_dir}/rdm.npy")
+    
+    # Compare the two RDMs
+    rdm_correlation = vision.correlate_rdms(target, comparison, correlation=method_name)
+    rdm = np.load(rdm_correlation)
+
+    # Create matplotlib figure
+    fig = Figure(figsize=(4, 4))
+    ax = fig.add_subplot(111)
+    cax = ax.matshow(rdm, cmap='viridis')
+    fig.colorbar(cax)
+    ax.set_title(f"RDM Comparison")
+
+    # Convert to a format Tkinter can use
+    canvas_agg = FigureCanvasAgg(fig)
+    canvas_agg.draw()
+    tk_img = ImageTk.PhotoImage(image=Image.frombytes('RGB', canvas_agg.get_width_height(), canvas_agg.tostring_rgb()))
+
+    # Display on Tkinter canvas
+    image_label = tk.Label(rdm_comparison_tab, image=tk_img)
+    image_label.image = tk_img  # Keep reference
+    image_label.grid(row=0, column=0, columnspan=3)
+
+    print("RDM computation using " + method_name + " is complete.")
+    return rdm_correlation
 
 
 
@@ -360,11 +418,13 @@ def make_gui():
     
     # Create tabs
     main_tab = ttk.Frame(tab_control)
-    rdm_display_tab = ttk.Frame(tab_control)  # Tab for RDM visualization
+    rdm_display_tab = ttk.Frame(tab_control)
+    rdm_comparison_tab = ttk.Frame(tab_control)
     
     # Add tabs to the notebook
     tab_control.add(main_tab, text='Main')
     tab_control.add(rdm_display_tab, text='RDM Display')
+    tab_control.add(rdm_comparison_tab, text='RDM Comparison Display')
     
     tab_control.pack(expand=1, fill="both")
 
@@ -421,6 +481,32 @@ def make_gui():
         command=lambda: display_rdms(rdm_display_tab, rdm_head_dir, source, model)
     )
     display_rdms_button.grid(row=8, column=1)
+    
+    # Button to navigate to the next RDM
+    next_rdm_button = ttk.Button(
+        rdm_display_tab,
+        text="Next RDM",
+        command=lambda: next_rdm(rdm_display_tab, rdm_head_dir, source, model)
+    )
+    next_rdm_button.grid(row=9, column=1)
+    
+    # Get target RDM directory
+    target_rdm_head_dir = user_select_dir(
+        main_tab, os.getcwd(), "Target RDM directory", 9
+    )
+    
+    # Get comparison RDM directory
+    comparison_rdm_head_dir = user_select_dir(
+        main_tab, os.getcwd(), "Comparison RDM directory", 10
+    )
+    
+    # Make a button to compare the RDMs
+    compare_rdms_button = ttk.Button(
+        main_tab,
+        text="Compare RDMs",
+        command=lambda: compare_rdms(rdm_comparison_tab, target_rdm_head_dir, comparison_rdm_head_dir, method_name=correlation_method_button.get())
+    )
+    compare_rdms_button.grid(row=11, column=1)
 
     # Run the GUI
     root.mainloop()
