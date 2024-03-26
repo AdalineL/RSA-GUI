@@ -244,8 +244,8 @@ def load_layer_activations(layer_activation_head_dir, source, model):
             f" with shape {layers.shape}"
         )
         
-    print("Layer activations have been loaded.")
     LAYER_ACTIVATIONS = layer_activations_dct
+    print("Layer activations have been loaded.")
     
     return layer_activations_dct
 
@@ -265,7 +265,7 @@ def get_correlation_method(root):
     return correlation_method
 
 
-def compute_rdm(rdm_head_dir, method_name):
+def compute_rdm(source, model, rdm_head_dir, method_name):
     global LAYER_ACTIVATIONS
     if not LAYER_ACTIVATIONS:
         messagebox.showinfo("Error", "Layer activations dictionary is empty.")
@@ -276,7 +276,7 @@ def compute_rdm(rdm_head_dir, method_name):
     if method_name not in ['correlation', 'cosine', 'euclidean', 'gaussian']:
         raise ValueError("Unsupported correlation method")
     
-    # Make layer activation directory (if necessary)
+    # Make RDM directories (if necessary)
     rdm_dir = f"{rdm_head_dir.get()}/rdms"
     os.makedirs(rdm_dir, exist_ok=True)
 
@@ -289,12 +289,14 @@ def compute_rdm(rdm_head_dir, method_name):
         rdm = vision.compute_rdm(activations, method=method_name)
         rdms[layer] = rdm
         
-        # Create a directory for each layer's RDM
-        layer_dir = os.path.join(rdm_dir, layer)
-        os.makedirs(layer_dir, exist_ok=True)
+        # Make directory for module-specific RDMs
+        module_dir = (
+            f"{rdm_dir}/{source.get()}/{model.get()}/{layer}"
+        )
+        os.makedirs(module_dir, exist_ok=True)
 
         # Save the RDM to a file within this layer's directory
-        file_path = os.path.join(layer_dir, "rdm.npy")
+        file_path = os.path.join(module_dir, "rdm.npy")
         np.save(file_path, rdm)
 
     print("RDM computation using " + method_name + " is complete.")
@@ -394,7 +396,7 @@ def make_gui():
     compute_rdm_button = ttk.Button(
         root, 
         text="Compute RDMs",
-        command=lambda: compute_rdm(rdm_head_dir, method_name=correlation_method_button.get())
+        command=lambda: compute_rdm(source, model, rdm_head_dir, method_name=correlation_method_button.get())
     )
     compute_rdm_button.grid(row=7, column=1)
     
