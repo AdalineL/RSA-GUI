@@ -14,6 +14,10 @@ from sklearn.metrics import mutual_info_score
 from sklearn.cross_decomposition import CCA
 import torch
 from PIL import Image, ImageTk
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
+
 
 
 # Libraries with pre-trained models
@@ -25,8 +29,10 @@ from open_clip import list_pretrained
 
 # ThingsVision modules
 from thingsvision import get_extractor
+import thingsvision.vision as vision
 from thingsvision.utils.storing import save_features
 from thingsvision.utils.data import ImageDataset, DataLoader
+
 
 
 # Models that cannot be programmatically determined
@@ -61,10 +67,12 @@ CUSTOM_MODELS = [
 ]
 # Other global variables
 CORRELATION_METHODS = {
-    'Spearman': spearmanr,
-    'Pearson': pearsonr,
-    'Kendall': kendalltau,
+    'Correlation': "correlation",
+    'Cosine': "cosine",
+    'Euclidean': "euclidean",
+    'Gaussian': "gaussian",
 }
+#TODO: create a getter method to get layer_activations_dct
 LAYER_ACTIVATIONS = {}
 
 
@@ -208,13 +216,14 @@ def compute_layer_activations(image_dir, source, model, layer_activation_head_di
 def load_layer_activations(layer_activation_head_dir, source, model):
     """Load the layer activation that have been computed. WATCH OUT FOR MEMORY!"""
     global LAYER_ACTIVATIONS
+    
     # Determine module directories
     layer_activation_dir = f"{layer_activation_head_dir.get()}/layer_activations"
     modules_head_dir = f"{layer_activation_dir}/{source.get()}/{model.get()}"
     module_dirs = [
         f"{modules_head_dir}/{module}"
         for module in os.listdir(modules_head_dir)
-        if os.path.exists(f"{modules_head_dir}/{module}/features.npy")
+        if os.path.exists(f"{modules_head_dir}/{module}/features_0-1.npy")
     ]
 
     # Load the layer activations
@@ -224,7 +233,7 @@ def load_layer_activations(layer_activation_head_dir, source, model):
         module = module_dir.split("/")[-1]
 
         # Load the layer activation for the module
-        layers = np.load(f"{module_dir}/features.npy")
+        layers = np.load(f"{module_dir}/features_0-1.npy")
 
         # Add the layer activation to the dictionary
         layer_activations_dct[module] = layers
@@ -235,11 +244,9 @@ def load_layer_activations(layer_activation_head_dir, source, model):
             f" with shape {layers.shape}"
         )
         
-    LAYER_ACTIVATIONS = layer_activations_dct
-    print(layer_activations_dct)
-    print(LAYER_ACTIVATIONS)
     print("Layer activations have been loaded.")
-
+    LAYER_ACTIVATIONS = layer_activations_dct
+    
     return layer_activations_dct
 
 
@@ -251,62 +258,89 @@ def get_correlation_method(root):
     correlation_method.set(options[0])  # default value to the first option
 
     method_label = tk.Label(root, text="Correlation Method for RDMs")
-    method_label.grid(row=5, column=0)
+    method_label.grid(row=6, column=0)
     method_menu = tk.OptionMenu(root, correlation_method, *options)
-    method_menu.grid(row=5, column=1)
+    method_menu.grid(row=6, column=1)
 
     return correlation_method
 
 
-def compute_rdm(layer_activations_dct, method='Spearman'):
+def compute_rdm(rdm_head_dir, method_name):
     global LAYER_ACTIVATIONS
     if not LAYER_ACTIVATIONS:
         messagebox.showinfo("Error", "Layer activations dictionary is empty.")
-        print(LAYER_ACTIVATIONS)
         return
-    if method not in CORRELATION_METHODS:
+    
+    # Get the correlation method
+    method_name = CORRELATION_METHODS.get(method_name, "correlation")
+    if method_name not in ['correlation', 'cosine', 'euclidean', 'gaussian']:
         raise ValueError("Unsupported correlation method")
     
-    save_dir = filedialog.askdirectory(title="Select Directory to Save RDMs")
-    if not save_dir:
-        messagebox.showinfo("Error", "No directory selected for saving RDMs.")
-        return
-    os.makedirs(save_dir, exist_ok=True)
+    # Make layer activation directory (if necessary)
+    rdm_dir = f"{rdm_head_dir.get()}/rdms"
+    os.makedirs(rdm_dir, exist_ok=True)
 
     # Initialize a dictionary to store RDMs for each layer
     rdms = {}
     
     # Calculate RDM for each layer
-    for layer, activations in layer_activations_dct.items():
-        n_samples = activations.shape[0]
-        rdm = np.zeros((n_samples, n_samples))
-        for i in range(n_samples):
-            for j in range(i, n_samples):  # Use symmetry to reduce computation
-                corr, _ = CORRELATION_METHODS[method](activations[i], activations[j])
-                distance = 1 - corr  
-                rdm[i, j] = rdm[j, i] = distance
+    for layer, activations in LAYER_ACTIVATIONS.items():
+        # Compute the RDM
+        rdm = vision.compute_rdm(activations, method=method_name)
         rdms[layer] = rdm
+        
+        # Create a directory for each layer's RDM
+        layer_dir = os.path.join(rdm_dir, layer)
+        os.makedirs(layer_dir, exist_ok=True)
 
-    print("RDM computation using" + method + " is complete.")
+        # Save the RDM to a file within this layer's directory
+        file_path = os.path.join(layer_dir, "rdm.npy")
+        np.save(file_path, rdm)
 
+    print("RDM computation using " + method_name + " is complete.")
     return rdms
 
 
 
-def display_rdms(rdms, root, canvas, rdm_layer_head_dir):
+def display_rdms(canvas, rdm_head_dir, source, model):
+    # Clear previous figures on the canvas
+    canvas.delete("all")
     
-    for idx, (layer, rdm) in enumerate(rdms.items()):
-        # Convert RDM to an image
-        rdm_image = Image.fromarray(np.uint8((rdm / np.max(rdm)) * 255)) 
-        rdm_photo = ImageTk.PhotoImage(rdm_image.resize((100, 100)))  
-        
-        # Calculate position
-        x_position = (idx % 5) * 110  
-        y_position = (idx // 5) * 110 
+    # Determine RDM directories
+    rdm_dir = f"{rdm_head_dir.get()}/rdms"
+    modules_head_dir = f"{rdm_dir}/{source.get()}/{model.get()}"
+    module_dirs = [
+        f"{modules_head_dir}/{module}"
+        for module in os.listdir(modules_head_dir)
+        if os.path.exists(f"{modules_head_dir}/{module}/rdm.npy")
+    ]
 
-        # Display RDM on canvas
-        canvas.create_image(x_position, y_position, anchor='nw', image=rdm_photo)
-        canvas.image = rdm_photo  
+    # For demonstration, display only the first RDM
+    if module_dirs:  # Check if there is at least one RDM
+        # Get the first RDM
+        first_module_dir = module_dirs[0]
+        module = first_module_dir.split("/")[-1]
+        rdm = np.load(f"{first_module_dir}/rdm.npy")
+
+        # Create matplotlib figure
+        fig = Figure(figsize=(4, 4))
+        ax = fig.add_subplot(111)
+        cax = ax.matshow(rdm, cmap='viridis')
+        fig.colorbar(cax)
+        ax.set_title(f"RDM: {module}")
+
+        # Convert to a format Tkinter can use
+        canvas_agg = FigureCanvasAgg(fig)
+        canvas_agg.draw()
+        tk_img = ImageTk.PhotoImage(image=Image.frombytes('RGB', canvas_agg.get_width_height(), canvas_agg.tostring_rgb()))
+
+        # Display on Tkinter canvas
+        canvas.create_image(200, 200, image=tk_img)
+        canvas.image = tk_img  # Keep reference
+
+    else:
+        print("No RDMs found to display.")
+
 
 
 
@@ -320,7 +354,7 @@ def make_gui():
 
     # Get the image directory
     user_home = os.path.expanduser("~")
-    image_dir = user_select_dir(root, user_home, "Image directory", 0)
+    image_dir = user_select_dir(root, os.path.join(os.getcwd(), 'images'), "Image directory", 0)
 
     # Determine which model to extract layer from
     source, model = get_model(root)
@@ -348,21 +382,33 @@ def make_gui():
     )
     load_layer_activations_button.grid(row=4, column=2)
     
-    # Get RDM layer directory
-    rdm_layer_head_dir = user_select_dir(
-        root, os.getcwd(), "RDM layer directory", 3
+    # Get RDMs directory
+    rdm_head_dir = user_select_dir(
+        root, os.getcwd(), "RDMs directory", 5
     )
     
     # Add correlation method selection
-    correlation_method = get_correlation_method(root)  
-        
+    correlation_method_button = get_correlation_method(root)  
+
     # Make a button to compute the correlation coefficient
     compute_rdm_button = ttk.Button(
         root, 
         text="Compute RDMs",
-        command=lambda: compute_rdm(layer_activations_dct=LAYER_ACTIVATIONS, method=correlation_method.get())
+        command=lambda: compute_rdm(rdm_head_dir, method_name=correlation_method_button.get())
     )
-    compute_rdm_button.grid(row=6, column=1)
+    compute_rdm_button.grid(row=7, column=1)
+    
+    # Create a canvas for RDM visualization
+    canvas = tk.Canvas(root, width=400, height=400)
+    canvas.grid(row=8, column=0, columnspan=3)
+    
+    # Make a button to display the RDMs
+    display_rdms_button = ttk.Button(
+        root,
+        text="Display RDMs",
+        command=lambda: display_rdms(canvas, rdm_head_dir, source, model)
+    )
+    display_rdms_button.grid(row=8, column=1)
 
     # Run the GUI
     root.mainloop()
