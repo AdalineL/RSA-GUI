@@ -66,6 +66,7 @@ CUSTOM_MODELS = [
     "Inception_ecoset",
 ]
 # Other global variables
+# Spearman, squared euclidean
 CORRELATION_METHODS = {
     'Correlation': "correlation",
     'Cosine': "cosine",
@@ -215,6 +216,7 @@ def compute_layer_activations(image_dir, source, model, layer_activation_head_di
     return
 
 
+
 def load_layer_activations(layer_activation_head_dir, source, model):
     """Load the layer activation that have been computed. WATCH OUT FOR MEMORY!"""
     global LAYER_ACTIVATIONS
@@ -223,30 +225,34 @@ def load_layer_activations(layer_activation_head_dir, source, model):
     layer_activation_dir = f"{layer_activation_head_dir.get()}/layer_activations"
     modules_head_dir = f"{layer_activation_dir}/{source.get()}/{model.get()}"
     module_dirs = [
-        f"{modules_head_dir}/{module}"
+        os.path.join(modules_head_dir, module)
         for module in os.listdir(modules_head_dir)
-        if os.path.exists(f"{modules_head_dir}/{module}/features_0-1.npy")
+        if os.path.isdir(os.path.join(modules_head_dir, module))
     ]
 
     # Load the layer activations
     layer_activations_dct = {}
     for module_dir in module_dirs:
         # Determine the module
-        module = module_dir.split("/")[-1]
+        module = os.path.basename(module_dir)
+        module_activations = []
 
-        # Load the layer activation for the module
-        layers = np.load(f"{module_dir}/features_0-1.npy")
+        # Iterate through all .npy files in the directory
+        for file in os.listdir(module_dir):
+            if file.endswith(".npy"):
+                layer_activation = np.load(os.path.join(module_dir, file))
+                module_activations.append(layer_activation)
 
-        # Add the layer activation to the dictionary
-        layer_activations_dct[module] = layers
-
-        # Print the shape of the layer activation
-        print(
-            f"Loaded layer activation for {module} module"
-            f" with shape {layers.shape}"
-        )
+        layer_activations_dct[module] = module_activations
         
+        # Print information about loaded activations
+        print(
+            f"Loaded {len(module_activations)} layer activations for {module} module."
+            f" with shape {module_activations[0].shape}"
+        )
+
     LAYER_ACTIVATIONS = layer_activations_dct
+    # print(LAYER_ACTIVATIONS)
     print("Layer activations have been loaded.")
     
     return layer_activations_dct
@@ -286,7 +292,15 @@ def compute_rdm(source, model, rdm_head_dir, method_name):
     rdms = {}
     
     # Calculate RDM for each layer
-    for layer, activations in LAYER_ACTIVATIONS.items():
+    for layer, activations_arr in LAYER_ACTIVATIONS.items():
+        
+        if all(isinstance(act, np.ndarray) for act in activations_arr):
+            # Concatenate along the first axis (adjust axis if necessary)
+            activations = np.concatenate(activations_arr, axis=0)
+        else:
+            print(f"Layer {layer} has non-array activations.")
+            continue
+        
         # Compute the RDM
         rdm = vision.compute_rdm(activations, method=method_name)
         rdms[layer] = rdm
@@ -334,7 +348,9 @@ def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
         # Convert to a format Tkinter can use
         canvas_agg = FigureCanvasAgg(fig)
         canvas_agg.draw()
-        tk_img = ImageTk.PhotoImage(image=Image.frombytes('RGB', canvas_agg.get_width_height(), canvas_agg.tostring_rgb()))
+        buf = canvas_agg.buffer_rgba()
+        tk_img = ImageTk.PhotoImage(image=Image.frombuffer('RGBA', canvas_agg.get_width_height(), buf, 'raw', 'RGBA', 0, 1))
+
 
         # Display on Tkinter canvas
         image_label = tk.Label(rdm_display_tab, image=tk_img)
@@ -347,8 +363,7 @@ def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
         
 # Helper function to navigate to the next RDM    
 def next_rdm(rdm_display_tab, rdm_head_dir, source, model):
-    global CURR_RDM_IDX
-    CURR_RDM_IDX += 1  
+    global CURR_RDM_IDX 
     
     rdm_dir = f"{rdm_head_dir.get()}/rdms"
     modules_head_dir = f"{rdm_dir}/{source.get()}/{model.get()}"
@@ -359,10 +374,10 @@ def next_rdm(rdm_display_tab, rdm_head_dir, source, model):
     ]
 
     # Restart index count if it exceeds the number of RDMs
-    if CURR_RDM_IDX > len(module_dirs):
-        CURR_RDM_IDX = 0
-        
+    CURR_RDM_IDX = (CURR_RDM_IDX + 1) % len(module_dirs) if module_dirs else 0
+
     display_rdms(rdm_display_tab, rdm_head_dir, source, model)  
+        
         
         
 def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_name):
@@ -500,6 +515,8 @@ def make_gui():
         main_tab, os.getcwd(), "Comparison RDM directory", 10
     )
     
+    # Drop down menu for correlation type
+    
     # Make a button to compare the RDMs
     compare_rdms_button = ttk.Button(
         main_tab,
@@ -507,7 +524,8 @@ def make_gui():
         command=lambda: compare_rdms(rdm_comparison_tab, target_rdm_head_dir, comparison_rdm_head_dir, method_name=correlation_method_button.get())
     )
     compare_rdms_button.grid(row=11, column=1)
-
+    
+    
     # Run the GUI
     root.mainloop()
     return
