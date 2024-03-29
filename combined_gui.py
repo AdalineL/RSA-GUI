@@ -4,6 +4,7 @@ thingsvision to extract features from images."""
 # Standard library imports
 import os
 import numpy as np
+import rsatoolbox
 import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog, messagebox
@@ -17,8 +18,6 @@ from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
-
-
 
 # Libraries with pre-trained models
 import torchvision.models as torchvision_models
@@ -258,7 +257,7 @@ def load_layer_activations(layer_activation_head_dir, source, model):
     return layer_activations_dct
 
 
-def get_correlation_method(root):
+def get_correlation_method_for_rdm(root):
     """Create a dropdown menu for selecting the correlation method."""
     correlation_method = tk.StringVar(root)
     
@@ -269,6 +268,21 @@ def get_correlation_method(root):
     method_label.grid(row=6, column=0)
     method_menu = tk.OptionMenu(root, correlation_method, *options)
     method_menu.grid(row=6, column=1)
+
+    return correlation_method
+
+
+def get_correlation_method_for_comparison(root):
+    """Create a dropdown menu for selecting the correlation method."""
+    correlation_method = tk.StringVar(root)
+    
+    options = list(CORRELATION_METHODS.keys())
+    correlation_method.set(options[0])  # default value to the first option
+
+    method_label = tk.Label(root, text="Correlation Method for RDMs")
+    method_label.grid(row=11, column=0)
+    method_menu = tk.OptionMenu(root, correlation_method, *options)
+    method_menu.grid(row=11, column=1)
 
     return correlation_method
 
@@ -356,6 +370,9 @@ def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
         image_label = tk.Label(rdm_display_tab, image=tk_img)
         image_label.image = tk_img  # Keep reference
         image_label.grid(row=0, column=0, columnspan=3)
+        
+        print("RDMs are Displayed.")
+
 
     else:
         print("No RDMs found to display.")
@@ -386,21 +403,24 @@ def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_
     method_name = CORRELATION_METHODS.get(method_name, "correlation")
     if method_name not in ['correlation', 'cosine', 'euclidean', 'gaussian']:
         raise ValueError("Unsupported correlation method")
+    # For vision.compute_rdm, must specify correlation as "pearson"
+    if method_name == "correlation":
+        method_name = "corr"
     
     # Load the target RDM
-    target = np.load(f"{target_rdm_dir}/rdm.npy")
+    target = np.load(f"{target_rdm_dir.get()}/rdm.npy")
     
     # Load the comparison RDM
-    comparison = np.load(f"{comparison_rdm_dir}/rdm.npy")
+    comparison = np.load(f"{comparison_rdm_dir.get()}/rdm.npy")
     
     # Compare the two RDMs
-    rdm_correlation = vision.correlate_rdms(target, comparison, correlation=method_name)
-    rdm = np.load(rdm_correlation)
-
+    # "sigma_k": covariance matrix of the pattern estimates. Used only for methods ‘corr_cov’ and ‘cosine_cov’.
+    rdm_comparison = rsatoolbox.rdm.compare(target, comparison, method=method_name, sigma_k=None)
+    
     # Create matplotlib figure
     fig = Figure(figsize=(4, 4))
     ax = fig.add_subplot(111)
-    cax = ax.matshow(rdm, cmap='viridis')
+    cax = ax.matshow(rdm_comparison, cmap='viridis')
     fig.colorbar(cax)
     ax.set_title(f"RDM Comparison")
 
@@ -415,7 +435,7 @@ def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_
     image_label.grid(row=0, column=0, columnspan=3)
 
     print("RDM computation using " + method_name + " is complete.")
-    return rdm_correlation
+    return rdm_comparison
 
 
 
@@ -479,13 +499,13 @@ def make_gui():
     )
     
     # Add correlation method selection
-    correlation_method_button = get_correlation_method(main_tab)  
+    correlation_method_for_rdm_button = get_correlation_method_for_rdm(main_tab)  
 
     # Make a button to compute the correlation coefficient
     compute_rdm_button = ttk.Button(
         main_tab, 
         text="Compute RDMs",
-        command=lambda: compute_rdm(source, model, rdm_head_dir, method_name=correlation_method_button.get())
+        command=lambda: compute_rdm(source, model, rdm_head_dir, method_name=correlation_method_for_rdm_button.get())
     )
     compute_rdm_button.grid(row=7, column=1)
     
@@ -516,15 +536,25 @@ def make_gui():
     )
     
     # Drop down menu for correlation type
+     # Add correlation method selection
+    correlation_method_for_comparison_button = get_correlation_method_for_comparison(main_tab)  
     
     # Make a button to compare the RDMs
     compare_rdms_button = ttk.Button(
         main_tab,
         text="Compare RDMs",
-        command=lambda: compare_rdms(rdm_comparison_tab, target_rdm_head_dir, comparison_rdm_head_dir, method_name=correlation_method_button.get())
+        command=lambda: compare_rdms(rdm_comparison_tab, target_rdm_head_dir, comparison_rdm_head_dir, method_name=correlation_method_for_comparison_button.get())
     )
-    compare_rdms_button.grid(row=11, column=1)
+    compare_rdms_button.grid(row=12, column=1)
     
+    # Bayesian optimization button
+    
+    # Button 
+    # Optimize all the models to the target
+    # or all the targets to the model
+
+    # optimization is what combniation of weighted coefficients of models or targets optimizes the target or model (for explainablitiy)
+    # ultiate goal is a weighted linear equation of either models or targets, inversion can sometimes be useful to narrow down on one speciific set of save_features# models and weights make up either the target or vice versa
     
     # Run the GUI
     root.mainloop()
