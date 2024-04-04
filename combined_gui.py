@@ -31,6 +31,8 @@ from thingsvision import get_extractor
 import thingsvision.vision as vision
 from thingsvision.utils.storing import save_features
 from thingsvision.utils.data import ImageDataset, DataLoader
+from thingsvision.core.rsa import compute_rdm, correlate_rdms
+
 
 
 
@@ -405,7 +407,7 @@ def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_
         raise ValueError("Unsupported correlation method")
     # For vision.compute_rdm, must specify correlation as "pearson"
     if method_name == "correlation":
-        method_name = "corr"
+        method_name = "pearson"
     
     # Load the target RDM
     target = np.load(f"{target_rdm_dir.get()}/rdm.npy")
@@ -415,15 +417,31 @@ def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_
     
     # Compare the two RDMs
     # "sigma_k": covariance matrix of the pattern estimates. Used only for methods ‘corr_cov’ and ‘cosine_cov’.
-    rdm_comparison = rsatoolbox.rdm.compare(target, comparison, method=method_name, sigma_k=None)
+    # rdm_comparison = rsatoolbox.rdm.compare(target, comparison, method=method_name, sigma_k=None)
+    rdm_coef = correlate_rdms(target, comparison, correlation=method_name)
     
     # Create matplotlib figure
-    fig = Figure(figsize=(4, 4))
-    ax = fig.add_subplot(111)
-    cax = ax.matshow(rdm_comparison, cmap='viridis')
-    fig.colorbar(cax)
-    ax.set_title(f"RDM Comparison")
+    fig = plt.figure(figsize=(10, 8))
+    gs = fig.add_gridspec(2, 2, height_ratios=[3, 1])
+    
+    # Display target RDM
+    ax1 = fig.add_subplot(gs[0, 0])
+    cax1 = ax1.matshow(target, cmap='viridis')
+    fig.colorbar(cax1, ax=ax1, fraction=0.046, pad=0.04)
+    ax1.set_title("Target RDM")
 
+    # Display comparison RDM
+    ax2 = fig.add_subplot(gs[0, 1])
+    cax2 = ax2.matshow(comparison, cmap='viridis')
+    fig.colorbar(cax2, ax=ax2, fraction=0.046, pad=0.04)
+    ax2.set_title("Comparison RDM")
+
+    # Display correlation coefficient
+    ax3 = fig.add_subplot(gs[1, :])
+    ax3.text(0.5, 0.5, f"RDM Coefficient: {rdm_coef:.2f}", fontsize=14, ha='center', va='center')
+    ax3.set_title(f"Comparison using {method_name.capitalize()}")
+    ax3.axis('off')  # Hide axes
+    
     # Convert to a format Tkinter can use
     canvas_agg = FigureCanvasAgg(fig)
     canvas_agg.draw()
@@ -435,7 +453,7 @@ def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_
     image_label.grid(row=0, column=0, columnspan=3)
 
     print("RDM computation using " + method_name + " is complete.")
-    return rdm_comparison
+    return rdm_coef
 
 
 
@@ -538,6 +556,9 @@ def make_gui():
     # Drop down menu for correlation type
      # Add correlation method selection
     correlation_method_for_comparison_button = get_correlation_method_for_comparison(main_tab)  
+    
+    # Comparison should be a correlation coefficient
+    # The two RDMs being chosen should be selectable and displayed to the user
     
     # Make a button to compare the RDMs
     compare_rdms_button = ttk.Button(
