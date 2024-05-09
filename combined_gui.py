@@ -18,6 +18,7 @@ from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+from bayes_opt import BayesianOptimization
 
 # Libraries with pre-trained models
 import torchvision.models as torchvision_models
@@ -66,6 +67,7 @@ CUSTOM_MODELS = [
     "VGG16_ecoset",
     "Inception_ecoset",
 ]
+
 # Other global variables
 # Spearman, squared euclidean
 CORRELATION_METHODS = {
@@ -379,6 +381,23 @@ def display_rdms(rdm_display_tab, rdm_head_dir, source, model):
     else:
         print("No RDMs found to display.")
         
+# Helper function to navigate to the previous RDM    
+def prev_rdm(rdm_display_tab, rdm_head_dir, source, model):
+    global CURR_RDM_IDX 
+    
+    rdm_dir = f"{rdm_head_dir.get()}/rdms"
+    modules_head_dir = f"{rdm_dir}/{source.get()}/{model.get()}"
+    module_dirs = [
+        f"{modules_head_dir}/{module}"
+        for module in os.listdir(modules_head_dir)
+        if os.path.exists(f"{modules_head_dir}/{module}/rdm.npy")
+    ]
+
+    # Restart index count if it exceeds the number of RDMs
+    CURR_RDM_IDX = (CURR_RDM_IDX - 1) % len(module_dirs) if module_dirs else 0
+
+    display_rdms(rdm_display_tab, rdm_head_dir, source, model)  
+        
         
 # Helper function to navigate to the next RDM    
 def next_rdm(rdm_display_tab, rdm_head_dir, source, model):
@@ -399,6 +418,7 @@ def next_rdm(rdm_display_tab, rdm_head_dir, source, model):
         
         
         
+# Have spearman as an option
 def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_name):
     
     # Get the correlation method
@@ -456,6 +476,48 @@ def compare_rdms(rdm_comparison_tab, target_rdm_dir, comparison_rdm_dir, method_
     return rdm_coef
 
 
+
+def model_performance(weights, rdms, target_rdm):
+    # Combine RDMs based on the weights and calculate performance as negative Euclidean distance
+    combined_rdm = sum(weight * rdms[model] for model, weight in weights.items())
+    performance = -np.linalg.norm(target_rdm - combined_rdm)
+    return performance
+
+
+
+# todo: fix this
+def run_bayesian_optimization(rdm_directories, target_rdm_dir):
+    # Load the target RDM
+    target_rdm = np.load(f"{target_rdm_dir.get()}/rdm.npy")
+
+    # Load comparison RDMs and map them by model name
+    # TODO - fix (!!!!!!!!!!!)
+    rdms = {extract_model_name(dir): load_rdm(dir) for dir in rdm_directories}
+
+    # Define bounds for Bayesian Optimization (weights between 0 and 1 for each model)
+    pbounds = {model: (0, 1) for model in rdms.keys()}
+
+    # Define the optimization function wrapping model_performance
+    def optimization_function(**weights):
+        return model_performance(weights, rdms, target_rdm)
+
+    # Initialize optimizer with the defined bounds and function
+    optimizer = BayesianOptimization(
+        f=optimization_function,
+        pbounds=pbounds,
+        random_state=1,
+    )
+
+    # Perform optimization
+    optimizer.maximize(
+        init_points=2,
+        n_iter=10,
+    )
+
+    # Output the best combination found
+    best_weights = optimizer.max['params']
+    print("Best weights found:", best_weights)
+    return best_weights
 
 
 
@@ -535,13 +597,21 @@ def make_gui():
     )
     display_rdms_button.grid(row=8, column=1)
     
+    # Button to navigate to the previous RDM
+    next_rdm_button = ttk.Button(
+        rdm_display_tab,
+        text="Previous RDM",
+        command=lambda: prev_rdm(rdm_display_tab, rdm_head_dir, source, model)
+    )
+    next_rdm_button.grid(row=9, column=1)
+    
     # Button to navigate to the next RDM
     next_rdm_button = ttk.Button(
         rdm_display_tab,
         text="Next RDM",
         command=lambda: next_rdm(rdm_display_tab, rdm_head_dir, source, model)
     )
-    next_rdm_button.grid(row=9, column=1)
+    next_rdm_button.grid(row=9, column=2)
     
     # Get target RDM directory
     target_rdm_head_dir = user_select_dir(
@@ -554,11 +624,7 @@ def make_gui():
     )
     
     # Drop down menu for correlation type
-     # Add correlation method selection
     correlation_method_for_comparison_button = get_correlation_method_for_comparison(main_tab)  
-    
-    # Comparison should be a correlation coefficient
-    # The two RDMs being chosen should be selectable and displayed to the user
     
     # Make a button to compare the RDMs
     compare_rdms_button = ttk.Button(
@@ -569,13 +635,12 @@ def make_gui():
     compare_rdms_button.grid(row=12, column=1)
     
     # Bayesian optimization button
-    
-    # Button 
-    # Optimize all the models to the target
-    # or all the targets to the model
-
-    # optimization is what combniation of weighted coefficients of models or targets optimizes the target or model (for explainablitiy)
-    # ultiate goal is a weighted linear equation of either models or targets, inversion can sometimes be useful to narrow down on one speciific set of save_features# models and weights make up either the target or vice versa
+    # optimize_button = ttk.Button(
+    #     main_tab,
+    #     text="Optimize Model Weights",
+    #     command=run_bayesian_optimization(target_rdm_head_dir, comparison_rdm_head_dir)
+    # )
+    # optimize_button.grid(row=13, column=1)
     
     # Run the GUI
     root.mainloop()
@@ -584,3 +649,22 @@ def make_gui():
 
 if __name__ == "__main__":
     make_gui()
+
+
+
+
+# Button 
+# Optimize all the models to the target
+# or all the targets to the model
+
+# optimization is what combniation of weighted coefficients of models or targets optimizes the target or model (for explainablitiy)
+# ultiate goal is a weighted linear equation of either models or targets, inversion can sometimes be useful to narrow down on one speciific set of save_features# models and weights make up either the target or vice versa
+
+# variational RSA
+    
+    
+# Comparison RDM: need to be able to compare a stack of RDMs (Iterate through them)
+# (!!) Scroll through and see what each layer's contribution is to the coefficient correlation 
+# (!!) Next would be weighted using bayesion optimization (refer to 1:1 notes)
+
+# todo: Include more Alignment Methods (provide proof that they are needed and necessary)
